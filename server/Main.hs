@@ -16,22 +16,25 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.Gzip
 import Network.Wai.Middleware.RequestLogger
 
-data TrainzState =
-  TrainzState {
+data TrainzConfig =
+  TrainzConfig {
     trainzProduction :: Bool,
     trainzPort :: Int,
     trainzMongoDB :: Database,
     trainzMongoPipe :: Pipe
     }
-  
+
+--
+-- Handlers
+--
 stationsHandler ::
-  TrainzState ->
+  TrainzConfig ->
   Maybe Text -> Maybe Word32 -> Maybe Word32 -> Handler [Station]
 stationsHandler st t l o =
   access (trainzMongoPipe st) ReadStaleOk (trainzMongoDB st) $
     stationsSource t l o $$ CL.consume
 
-stationHandler :: TrainzState -> Text -> Handler Station
+stationHandler :: TrainzConfig -> Text -> Handler Station
 stationHandler st i = do
   r <- access (trainzMongoPipe st) ReadStaleOk (trainzMongoDB st) $ loadStation i
   case r of
@@ -39,29 +42,31 @@ stationHandler st i = do
     Just r' -> return r'
 
 stationsNearHandler ::
-  TrainzState ->
+  TrainzConfig ->
   Double -> Double -> Word32 -> Maybe Word32 -> Maybe Word32 -> Handler [Station]
 stationsNearHandler st lat lon d l o =
   access (trainzMongoPipe st) ReadStaleOk (trainzMongoDB st) $
     stationsNearSource lat lon d l o $$ CL.consume
   
-    
-trainzApplication :: TrainzState -> Application
+--
+-- The application
+--  
+trainzApplication :: TrainzConfig -> Application
 trainzApplication st =
   let logger = if trainzProduction st
                then logStdout else logStdoutDev
   in logger . gzip def . serve trainzAPI . trainzServer $ st
   where trainzAPI :: Proxy TrainzAPI
         trainzAPI = Proxy
-        trainzServer :: TrainzState -> Server TrainzAPI
+        trainzServer :: TrainzConfig -> Server TrainzAPI
         trainzServer st =
           stationsHandler st :<|> stationHandler st :<|> stationsNearHandler st
 
-trainz :: TrainzState -> IO ()
+trainz :: TrainzConfig -> IO ()
 trainz st = run (trainzPort st) . trainzApplication $ st
 
-mkTrainsState :: Bool -> Int -> Host -> Database -> IO TrainzState
-mkTrainsState prod p h d = TrainzState prod p d <$> MongoDB.connect h 
+mkTrainsState :: Bool -> Int -> Host -> Database -> IO TrainzConfig
+mkTrainsState prod p h d = TrainzConfig prod p d <$> MongoDB.connect h 
 
 main :: IO ()
 main = mkTrainsState False 3000 (host "localhost") "db_inspire" >>= trainz
