@@ -3,7 +3,7 @@
 {-# LANGUAGE Trustworthy #-}
 
 module Trainz.Database
-       ( searchStationsSource, loadStation
+       ( stationsSource, loadStation, stationsNearSource
        ) where
 
 import Database.MongoDB as MongoDB
@@ -22,6 +22,38 @@ import Data.Maybe(fromMaybe)
 
 railwayStationNodesCol :: Collection
 railwayStationNodesCol = "railwayStationNodes"
+
+
+stationsSource ::
+  (MonadIO m, MonadBaseControl IO m) =>
+  Maybe Text -> Maybe Word32 -> Maybe Word32 -> Source (Action m) Station
+stationsSource = textSearchSource railwayStationNodesCol
+
+loadStation :: MonadIO m => Text -> Action m (Maybe Station)
+loadStation t = do
+  r <- findOne $ select [ "properties.id" =: t ] railwayStationNodesCol
+  return $ case r of
+    Nothing -> Nothing
+    Just r' -> fromBson r'
+
+
+stationsNearSource ::
+  (MonadIO m, MonadBaseControl IO m) =>
+  Double -> Double -> Word32 -> Maybe Word32 -> Maybe Word32 ->
+  Source (Action m) Station
+stationsNearSource lat lon d limit offset =
+  let sel = mkNearSelector lat lon d
+      src = querySource q'
+      q = select sel railwayStationNodesCol
+      q' = q { MongoDB.limit = limit', MongoDB.skip = offset' }
+      limit' = min 100 $ fromMaybe 10 limit
+      offset' = fromMaybe 0 offset
+  in mapOutputMaybe fromBson src
+
+
+--
+-- Helpers
+--
 
 cursorSource ::
   (MonadIO m, MonadBaseControl IO m) => Cursor -> Source (Action m) Document
@@ -48,24 +80,15 @@ textSearchSource c qname limit offset =
   in mapOutputMaybe fromBson . querySource $ q'
 
 
-searchStationsSource ::
-  (MonadIO m, MonadBaseControl IO m) =>
-  Maybe Text -> Maybe Word32 -> Maybe Word32 -> Source (Action m) Station
-searchStationsSource = textSearchSource railwayStationNodesCol
-
-loadStation :: MonadIO m => Text -> Action m (Maybe Station)
-loadStation t = do
-  r <- findOne $ select [ "properties.id" =: t ] railwayStationNodesCol
-  return $ case r of
-    Nothing -> Nothing
-    Just r' -> fromBson r'
-
-
-test t l o =
-  let run = searchStationsSource (pure . T.pack $ t) l o $$ CL.consume
-  in do
-    pipe <- MongoDB.connect (host "127.0.0.1")
-    r <- access pipe master "db_inspire" run
-    close pipe
-    print $ r
-    
+mkNearSelector :: Double -> Double -> Word32 -> Selector
+mkNearSelector lat lon d =
+  [ "geometry" =:
+    [ "$near" =:
+      [ "$geometry" =:
+        [ "type" =: ("Point" :: String)
+        , "coordinates" =: [ lat, lon ]
+        ]
+      , "$maxDistance" =: ((fromInteger . toInteger $ d) :: Int)
+      ]
+    ]
+  ]

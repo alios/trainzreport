@@ -29,7 +29,7 @@ stationsHandler ::
   Maybe Text -> Maybe Word32 -> Maybe Word32 -> Handler [Station]
 stationsHandler st t l o =
   access (trainzMongoPipe st) ReadStaleOk (trainzMongoDB st) $
-    searchStationsSource t l o $$ CL.consume
+    stationsSource t l o $$ CL.consume
 
 stationHandler :: TrainzState -> Text -> Handler Station
 stationHandler st i = do
@@ -37,6 +37,14 @@ stationHandler st i = do
   case r of
     Nothing -> throwError $ err404 { errBody = "unable to lookup station " }
     Just r' -> return r'
+
+stationsNearHandler ::
+  TrainzState ->
+  Double -> Double -> Word32 -> Maybe Word32 -> Maybe Word32 -> Handler [Station]
+stationsNearHandler st lat lon d l o =
+  access (trainzMongoPipe st) ReadStaleOk (trainzMongoDB st) $
+    stationsNearSource lat lon d l o $$ CL.consume
+  
     
 trainzApplication :: TrainzState -> Application
 trainzApplication st =
@@ -46,7 +54,8 @@ trainzApplication st =
   where trainzAPI :: Proxy TrainzAPI
         trainzAPI = Proxy
         trainzServer :: TrainzState -> Server TrainzAPI
-        trainzServer st = stationsHandler st :<|> stationHandler st
+        trainzServer st =
+          stationsHandler st :<|> stationHandler st :<|> stationsNearHandler st
 
 trainz :: TrainzState -> IO ()
 trainz st = run (trainzPort st) . trainzApplication $ st
