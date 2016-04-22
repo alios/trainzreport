@@ -23,7 +23,6 @@ import Data.Maybe(fromMaybe)
 railwayStationNodesCol :: Collection
 railwayStationNodesCol = "railwayStationNodes"
 
-
 stationsSource ::
   (MonadIO m, MonadBaseControl IO m) =>
   Maybe Text -> Maybe Word32 -> Maybe Word32 -> Source (Action m) Station
@@ -36,7 +35,6 @@ loadStation t = do
     Nothing -> Nothing
     Just r' -> fromBson r'
 
-
 stationsNearSource ::
   (MonadIO m, MonadBaseControl IO m) =>
   Double -> Double -> Word32 -> Maybe Word32 -> Maybe Word32 ->
@@ -45,12 +43,9 @@ stationsNearSource lat lon d limit offset =
   let sel = mkNearSelector lat lon d
       src = querySource q'
       q = select sel railwayStationNodesCol
-      q' = q { MongoDB.limit = limit', MongoDB.skip = offset' }
-      limit' = min 100 $ fromMaybe 10 limit
-      offset' = fromMaybe 0 offset
+      q' = limitOffsetWithDefault limit offset q
   in mapOutputMaybe fromBson src
-
-
+     
 --
 -- Helpers
 --
@@ -74,10 +69,14 @@ textSearchSource c qname limit offset =
         Nothing -> []
         Just qname' -> [ "$text" =: [ "$search" =: qname' ] ]
       q = select s c
-      limit' = min 100 $ fromMaybe 10 limit
-      offset' = fromMaybe 0 offset
-      q' = q { MongoDB.limit = limit', MongoDB.skip = offset' }
+      q' = limitOffsetWithDefault limit offset q
   in mapOutputMaybe fromBson . querySource $ q'
+
+limitOffsetWithDefault :: Maybe Limit -> Maybe Word32 -> Query -> Query
+limitOffsetWithDefault limit offset q =
+  let limit' = min 100 $ fromMaybe 10 limit
+      offset' = fromMaybe 0 offset
+  in q { MongoDB.limit = limit', MongoDB.skip = offset' }
 
 
 mkNearSelector :: Double -> Double -> Word32 -> Selector

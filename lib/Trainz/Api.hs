@@ -21,9 +21,9 @@ type StationApi = "station" :> Capture "stationId" Text :> Get '[JSON] Station
 
 type StationsNearApi =
   "stationsNear" :>
-  Capture "lat" Double :>
-  Capture "lon" Double :>
-  Capture "maxDistance" Word32 :>
+  QueryParam "lat" Double :>
+  QueryParam "lon" Double :>
+  QueryParam "d" Word32 :>
   QueryParam "limit" Word32 :>
   QueryParam "offset" Word32 :>
   Get '[JSON] [Station]

@@ -38,13 +38,20 @@ stationHandler :: TrainzConfig -> Text -> Handler Station
 stationHandler st i = do
   r <- access (trainzMongoPipe st) ReadStaleOk (trainzMongoDB st) $ loadStation i
   case r of
-    Nothing -> throwError $ err404 { errBody = "unable to lookup station " }
+    Nothing -> throwError $ err404 { errBody = "error: unable to lookup station " }
     Just r' -> return r'
 
 stationsNearHandler ::
   TrainzConfig ->
-  Double -> Double -> Word32 -> Maybe Word32 -> Maybe Word32 -> Handler [Station]
-stationsNearHandler st lat lon d l o =
+  Maybe Double -> Maybe Double -> Maybe Word32 -> Maybe Word32 -> Maybe Word32 -> Handler [Station]
+stationsNearHandler st lat' lon' d' l o = do
+  lat <- maybe (throwError $ err412 {
+                   errBody = "error: lat parameter missing"}) return lat'
+  lon <- maybe (throwError $ err412 {
+                   errBody = "error: lon parameter missing"}) return lon'
+  d   <- maybe (throwError $ err412 {
+                   errBody = "error: d parameter missing"}) return d'
+  
   access (trainzMongoPipe st) ReadStaleOk (trainzMongoDB st) $
     stationsNearSource lat lon d l o $$ CL.consume
   
